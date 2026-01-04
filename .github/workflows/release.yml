@@ -1,0 +1,53 @@
+name: Github Release
+on:
+  push:
+    paths:
+      - LAST_CHANGE
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read revision
+        id: revision
+        run: |
+          REVISION=$(cat LAST_CHANGE | tr -d '\n')
+          echo "revision=$REVISION" >> $GITHUB_OUTPUT
+
+      - name: Download Snapshot
+        run: |
+          curl -L -o chrome-android.zip \
+            https://storage.googleapis.com/chromium-browser-snapshots/Android/${{ steps.revision.outputs.revision }}/chrome-android.zip
+
+      - name: Install aapt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aapt
+
+      - name: Prepare APK
+        id: apk
+        run: |
+          unzip -q chrome-android.zip
+          VERSION_NAME=$(aapt dump badging chrome-android/apks/ChromePublic.apk \
+            | grep "versionName" \
+            | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | tr -d ' ')
+          echo "version=$VERSION_NAME" >> $GITHUB_OUTPUT
+          mv chrome-android/apks/ChromePublic.apk Chromium-$VERSION_NAME.apk
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.apk.outputs.version }}
+          name: ${{ steps.apk.outputs.version }}
+          body: |
+            Revision: `${{ steps.revision.outputs.revision }}` 
+            Source : https://storage.googleapis.com/chromium-browser-snapshots/index.html?prefix=Android/${{ steps.revision.outputs.revision }}/
+          files: |
+            Chromium-${{ steps.apk.outputs.version }}.apk
